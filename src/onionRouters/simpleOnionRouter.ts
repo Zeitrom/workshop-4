@@ -1,35 +1,59 @@
 import bodyParser from "body-parser";
+import { generateRsaKeyPair, exportPubKey, exportPrvKey, importPrvKey, rsaDecrypt, symDecrypt } from "../crypto";
+import { REGISTRY_PORT } from "../config";
 import express from "express";
+
 import { BASE_ONION_ROUTER_PORT } from "../config";
-import { lastReceivedEncryptedMessage, lastReceivedDecryptedMessage, lastMessageDestination } from "./../users/user";
-
-
 
 export async function simpleOnionRouter(nodeId: number) {
   const onionRouter = express();
   onionRouter.use(express.json());
   onionRouter.use(bodyParser.json());
 
+  onionRouter.get("/status", (req, res) => {res.send("live");});
 
-  // TODO implement the status route
-  onionRouter.get("/status", (req, res) => {
-    res.status(200).send("live");
-      }
-  );
+  let lastReceivedEncryptedMessage: string | null = null;
+  let lastMessageDestination: number | null = null;
 
-  onionRouter.get("/getLastReceivedEncryptedMessage", (req, res) => {
-    res.status(200).json({result : lastReceivedEncryptedMessage})
+  onionRouter.get("/getLastReceivedEncryptedMessage", (req, res) => {res.json({ result: lastReceivedEncryptedMessage })});
+  
+  onionRouter.get("/getLastReceivedDecryptedMessage", (req , res) => {res.json({ result: lastReceivedEncryptedMessage })});
+  
+  onionRouter.get("/getLastMessageDestination", (req, res) => {res.json({ result: lastMessageDestination })});
+ 
+  const keyPair = await generateRsaKeyPair();
+  onionRouter.get("/getPublicKey", (req, res) => {
+    res.json({ result: keyPair.publicKey });
   });
 
-  onionRouter.get("/getLastReceivedDecryptedMessage", (req, res) => {
-        res.status(200).json({result : lastReceivedDecryptedMessage})
-
+  const publicKey = await exportPubKey(keyPair.publicKey);
+  onionRouter.get("/getPublicKey", (req, res) => {
+    res.json({ result: publicKey });
   });
 
-  onionRouter.get("/getLastMessageDestination", (req, res) => {
-        res.status(200).json({result : lastMessageDestination})
+  const privateKey = await exportPrvKey(keyPair.privateKey);
+  onionRouter.get("/getPrivateKey", (req, res) => {
+    res.json({ result: privateKey });
   });
 
+  let lastMessageSource: number | null = null;
+  onionRouter.get("/getLastMessageSource", (req, res) => {
+    res.json({ result: lastMessageSource });
+  });
+
+  const response = await fetch(`http://localhost:${REGISTRY_PORT}/registerNode`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      nodeId,
+      pubKey: publicKey,
+    }),
+  });
+  
+  
+  
   const server = onionRouter.listen(BASE_ONION_ROUTER_PORT + nodeId, () => {
     console.log(
       `Onion router ${nodeId} is listening on port ${
